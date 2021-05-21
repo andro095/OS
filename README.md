@@ -1,3 +1,3 @@
 # OS
 Github repo for OS labs and proyects
-https://prod.liveshare.vsengsaas.visualstudio.com/join?38F956072619F8B925FE1CEAA453555F3048
+https://prod.liveshare.vsengsaas.visualstudio.com/join?3CAA4091F50FE8DA810BD0FA4BBEBE84147B
