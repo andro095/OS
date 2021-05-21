@@ -28,8 +28,6 @@
 #include <netdb.h>
 #include "new.pb.h"
 
-#include "./new.pb.h"
-
 
 using namespace std;
 
@@ -37,13 +35,12 @@ using namespace std;
 // #define PORT 8080           // the port client will be connecting to
 #define BUFSIZE 4096    // max number of bytes we can get at once
 
-int sockfd;
+int sfd;
 int userIdGlobal=0;
 
 int fd[2];
 vector<chat::MessageCommunication> publicChat;
 map<string, vector<string>> privChat;
-map<int, int> pchat;
 
 static void err(const char* s) {
     perror(s);
@@ -81,7 +78,7 @@ void *readPet( void *arg) {
         char buff[BUFSIZE];
 
         bzero(buff, BUFSIZE);
-        recv(sockfd, buff, BUFSIZE, 0);
+        recv(sfd, buff, BUFSIZE, 0);
 
         string ret(buff, BUFSIZE);
         chat::ServerResponse response;
@@ -168,7 +165,7 @@ int main(int argc, char* argv[])
     GOOGLE_PROTOBUF_VERIFY_VERSION;
 
     if (argc < 3) {
-       fprintf(stderr,"Not enough arguments given\n", argv[0]);
+       fprintf(stderr,"No se dieron todos los argumentos \n", argv[0]);
        exit(0);
     }
 
@@ -178,13 +175,6 @@ int main(int argc, char* argv[])
         exit(1);
     }
 
-    portno = atoi(argv[3]);
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
-
-    if (sockfd < 0) 
-        err("Socket error");
-
-    
     server = gethostbyname(argv[2]);
 
     if (server == NULL) {
@@ -192,14 +182,23 @@ int main(int argc, char* argv[])
         exit(0);
     }
 
-    bzero((char *) &serv_addr, sizeof(serv_addr));
+    sfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sfd < 0) cout << "Socket error" << endl;
+
+    bzero(&serv_addr, sizeof(serv_addr));
+    portno = atoi(argv[3]); 
+
     serv_addr.sin_family = AF_INET;
-
-    bcopy((char *)server -> h_addr, (char *)&serv_addr.sin_addr.s_addr, server->h_length);
     serv_addr.sin_port = htons(portno);
+    serv_addr.sin_addr = *((struct in_addr *)server->h_addr);
 
-    if (connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) 
+    // bcopy((char *)server -> h_addr, (char *)&serv_addr.sin_addr.s_addr, server->h_length);
+
+    if (connect(sfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) 
         err("Connection error");
+
+    cout << "Conection Works" << endl;
+    
 
     chat::UserRegistration * userinfo(new chat::UserRegistration);
     userinfo->set_username(argv[1]);
@@ -217,18 +216,23 @@ int main(int argc, char* argv[])
     char cstr[binstr.size() + 1];
     strcpy(cstr, binstr.c_str());
 
-    send(sockfd, cstr, strlen(cstr), 0);
+    send(sfd, cstr, strlen(cstr), 0);
     bzero(buffer, BUFSIZE);
-    recv(sockfd, buffer, BUFSIZE, 0);
+    recv(sfd, buffer, BUFSIZE, 0);
+    
+    // while (true)
+    // {
+    //     /* code */
+    // }
 
-    if (1)
-    {
+    // if (1)
+    // {
 
-        string ret(buffer, BUFSIZE);
-    }
-    chat::ServerResponse sresp;
-    sresp.ParseFromString(buffer);
-    int option = sresp.option();
+    //     string ret(buffer, BUFSIZE);
+    // }
+    // chat::ServerResponse sresp;
+    // sresp.ParseFromString(buffer);
+    // int option = sresp.option();
     
     pthread_t thear;
     pthread_create(&thear, NULL, readPet, NULL);
@@ -286,7 +290,7 @@ int main(int argc, char* argv[])
                 char cstr[serialized_string.size() + 1];
                 strcpy(cstr, serialized_string.c_str());
 
-                send(sockfd, cstr, strlen(cstr), 0);
+                send(sfd, cstr, strlen(cstr), 0);
 
                 int conres = -1;
                 int resp;
@@ -323,7 +327,7 @@ int main(int argc, char* argv[])
                 char cstr[serialized_string.size() + 1];
                 strcpy(cstr, serialized_string.c_str());
 
-                send(sockfd, cstr, strlen(cstr), 0);
+                send(sfd, cstr, strlen(cstr), 0);
                 // TO DO: Enviar el mensaje y volver a implementar el jalado de mensajes para asegurar el correcto envio al servidor.;
 
             }
