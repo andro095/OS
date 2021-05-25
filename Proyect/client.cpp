@@ -7,24 +7,15 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #include <algorithm>
 #include <netdb.h>
-#include <iostream>
-#include <stdio.h> 
-#include <stdlib.h>
-#include <unistd.h>
-#include <string.h>
 #include <sys/syscall.h>
 #include <pthread.h>
 #include <condition_variable>
 #include <map>
 #include <time.h>
 #include <chrono>
-#include <unistd.h>
-#include <pthread.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
 #include <netdb.h>
 #include "new.pb.h"
 
@@ -202,7 +193,7 @@ int main(int argc, char* argv[])
 
     chat::UserRegistration * userinfo(new chat::UserRegistration);
     userinfo->set_username(argv[1]);
-    userinfo->set_ip(argv[4]);
+    userinfo->set_ip(inet_ntoa(serv_addr.sin_addr));
 
     // Se crea instancia de Mensaje, se setea los valores deseados
     chat::ClientPetition clip;
@@ -217,8 +208,89 @@ int main(int argc, char* argv[])
     strcpy(cstr, binstr.c_str());
 
     send(sfd, cstr, strlen(cstr), 0);
-    bzero(buffer, BUFSIZE);
-    recv(sfd, buffer, BUFSIZE, 0);
+
+    char bff[BUFSIZE];
+
+
+    int bytesreceived = recv(sfd, bff, BUFSIZE, 0);
+    
+
+    bff[bytesreceived] = '\0';
+
+    string resp = bff;
+
+    chat::ServerResponse response;
+    response.ParseFromString(resp);
+
+    cout << "Código de respuesta: " << response.code() << endl;
+
+    chat::MessageCommunication * testMessage(new chat::MessageCommunication);
+    testMessage->set_sender("x");
+    testMessage->set_recipient("everyone");
+    testMessage->set_message("s");
+
+    clip.set_option(4);
+    clip.set_allocated_messagecommunication(testMessage);
+
+    string binstr2;
+    clip.SerializeToString(&binstr2);
+
+    char cstr2[binstr.size() + 1];
+    strcpy(cstr2, binstr2.c_str());
+
+    send(sfd, cstr2, strlen(cstr2), 0);
+
+    char bff2[BUFSIZE];
+
+
+    int bytesreceived2 = recv(sfd, bff2, BUFSIZE, 0);
+    
+
+    bff2[bytesreceived2] = '\0';
+
+    string resp2 = bff2;
+
+    response.ParseFromString(resp2);
+
+    cout << "Código de respuesta: " << response.code() << endl;
+
+    chat::MessageCommunication * testMessage2(new chat::MessageCommunication);
+    testMessage2->set_sender("x");
+    testMessage2->set_recipient("everyone");
+    testMessage2->set_message("s");
+
+    clip.set_option(4);
+    clip.set_allocated_messagecommunication(testMessage2);
+
+    string binstr3;
+    clip.SerializeToString(&binstr3);
+
+    char cstr3[binstr.size() + 1];
+    strcpy(cstr3, binstr3.c_str());
+
+    send(sfd, cstr3, strlen(cstr3), 0);
+
+    char bff3[BUFSIZE];
+
+
+    int bytesreceived3 = recv(sfd, bff3, BUFSIZE, 0);
+    
+
+    bff3[bytesreceived3] = '\0';
+
+    string resp3 = bff3;
+
+    response.ParseFromString(resp2);
+
+    cout << "Código de respuesta: " << response.code() << endl;
+
+    // bzero(buffer, BUFSIZE);
+    // recv(sfd, buffer, BUFSIZE, 0);
+
+
+
+
+    exit(0);
     
     // while (true)
     // {
@@ -294,7 +366,7 @@ int main(int argc, char* argv[])
 
                 int conres = -1;
                 int resp;
-                while (conres == -1)
+                while (conres < 1)
                 {
                     conres = read(fd[0], &resp, 1);
                 }

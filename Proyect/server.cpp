@@ -56,51 +56,59 @@ struct User{
 
 map<string, User> users;
 
-void HandleOptions(char *buffer, User *userInfo)
+void HandleOptions(ClientPetition pet, User *userInfo)
 {
-    string ret(buffer, MAXDATASIZE);
-
-
-    ClientPetition clip;
-    clip.ParseFromString(ret);
-
-    if (clip.option() == 4)
+    cout << "LA petit op: " << pet.option() << endl;
+    if (pet.option() == 4)
     {
         // MessageCommunication* broadMessage(new MessageCommunication);
         // broadMessage->set_message(clip.messagecommunication().sender());
 
         //Chat publico
-        if (clip.messagecommunication().recipient() == "everyone")
+        if (pet.messagecommunication().recipient() == "everyone")
         {
             cout << "Chat publico" << endl;
-            pthread_mutex_lock(&myMutex);
-            publicChat.push_back(clip.messagecommunication());
-            pthread_mutex_unlock(&myMutex);
-            for (MessageCommunication message: publicChat)
-            {
-                cout << "entro" << endl;
-                MessageCommunication *msg(new MessageCommunication);
-                msg->set_sender(message.sender());
-                msg->set_message(message.message());
+            ServerResponse resp;
+            resp.set_option(4);
+            resp.set_code(300);
 
-                ServerResponse response;
-                response.set_option(1);
-                response.set_code(200);
-                response.set_allocated_messagecommunication(msg);
+            string serializedString;
 
-                string serString;
-                response.SerializeToString(&serString);
+            resp.SerializeToString(&serializedString);
 
-                char cstr[serString.size() + 1];
-                strcpy(cstr, serString.c_str());
-                int sent = send(userInfo->socket, cstr, strlen(cstr), 0);
-                if (sent == 0)
-                {
-                    fprintf(stderr, "No se envio el mensaje\n");
-                }
-                cout << "entro2" << endl;
+            char cstr[serializedString.size() + 1];
+            strcpy(cstr, serializedString.c_str());
 
-            }
+            send(userInfo->socket, cstr, strlen(cstr), 0);
+
+            // pthread_mutex_lock(&myMutex);
+            // publicChat.push_back(clip.messagecommunication());
+            // pthread_mutex_unlock(&myMutex);
+            // for (MessageCommunication message: publicChat)
+            // {
+            //     cout << "entro" << endl;
+            //     MessageCommunication *msg(new MessageCommunication);
+            //     msg->set_sender(message.sender());
+            //     msg->set_message(message.message());
+
+            //     ServerResponse response;
+            //     response.set_option(4);
+            //     response.set_code(200);
+            //     response.set_allocated_messagecommunication(msg);
+
+            //     string serString;
+            //     response.SerializeToString(&serString);
+
+            //     char cstr[serString.size() + 1];
+            //     strcpy(cstr, serString.c_str());
+            //     int sent = send(userInfo->socket, cstr, strlen(cstr), 0);
+            //     if (sent == 0)
+            //     {
+            //         fprintf(stderr, "No se envio el mensaje\n");
+            //     }
+            //     cout << "entro2" << endl;
+
+            // }
             
 
         }
@@ -139,32 +147,59 @@ void * cThreadFunc(void *args) {
     User *threadInfo;
     threadInfo = (struct User *) args;
 
+
     bool isClosed = false;
     time_t serverTime;
+    int count = 0;
+    
 
-    while (threadInfo->socket > 0 && isClosed)
+    while (threadInfo->socket > 0 && !isClosed)
     {
         bzero(buffer, MAXDATASIZE);
 
         time(&serverTime);
 
-        int resp = recv(threadInfo->socket, buffer, MAXDATASIZE, 0);
-        if (resp > 0)
+        // int resp = recv(threadInfo->socket, buffer, MAXDATASIZE, 0);
+
+        char buff[MAXDATASIZE];
+
+        int bytesrecieved = recv(threadInfo->socket, buff, MAXDATASIZE, 0);
+        buff[bytesrecieved] = '\0';
+
+        string serializedString = buff;
+
+        ClientPetition cpetit;
+        cpetit.ParseFromString(serializedString);
+        
+        cout << "Opción" << cpetit.option() << endl;
+
+        if (bytesrecieved > 0)
         {
-            if (*buffer == '#')
+
+            if (*buff == '#')
             {
                 cout << "Se perdio la conexion" << endl;
                 isClosed = true;
             }
             else
-            {
-                HandleOptions(buffer, threadInfo);
+            {                
+                HandleOptions(cpetit, threadInfo);
             }
         }
         else
         {
             cout << "Error al recibir" << endl;
         }
+
+        
+
+        count++;
+
+        if (count >= 3)
+        {
+            break;
+        }
+        
     }
 
 
@@ -241,6 +276,8 @@ void listenNewConnections()
 
         ClientPetition cpetit;
         cpetit.ParseFromString(serializedString);
+        
+        cout << "Opción" << cpetit.option() << endl;
 
         if (cpetit.option() == 1) {
             struct User userInfo;
@@ -248,6 +285,17 @@ void listenNewConnections()
             userInfo.status = "ACTIVO";
             userInfo.ip = cpetit.registration().ip();
             userInfo.socket = nsock;
+
+            ServerResponse response;
+            response.set_option(4);
+            response.set_code(200);
+
+            response.SerializeToString(&serializedString);
+
+            char cstr[serializedString.size() + 1];
+            strcpy(cstr, serializedString.c_str());
+
+            send(nsock, cstr, strlen(cstr), 0);
 
             //users.insert(pair<string,User>(userInfo.username, newuser));
 
