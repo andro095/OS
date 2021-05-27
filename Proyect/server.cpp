@@ -244,12 +244,11 @@ void * cThreadFunc(void *args) {
     string uName = threadInfo->userName;
 
     bool isClosed = false;
-    time_t serverTime;
-    int count = 0;
-    
+    time_t serverTime;    
 
     while (usoc > 0 && !isClosed)
     {
+        //Bezos be like: "I'm not angry, just disappointed"
         bzero(buffer, MAXDATASIZE);
 
         time(&serverTime);
@@ -282,14 +281,6 @@ void * cThreadFunc(void *args) {
             cout << "Error al recibir" << endl;
         }
 
-        
-
-        count++;
-
-        if (count >= 3)
-        {
-            break;
-        }
         
     }
 
