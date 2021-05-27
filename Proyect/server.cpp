@@ -7,43 +7,35 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-// #include <algorithm>
-// #include <netdb.h>
 #include <sys/syscall.h>
 #include <pthread.h>
 #include <map>
-// #include <condition_variable>
-// #include <time.h>
-// #include <chrono>
-// #include <netdb.h>
+
 #include "new.pb.h"
 
 
 using namespace std;
 using namespace chat;
-using namespace google::protobuf;
 
-#define HOSTNAME "localhost"
-#define BUFSIZE 4096    // max number of bytes we can send at once
-#define BACKLOG 10          // how many pending connections queue will hold
-
+// max number of bytes we can send at once
 #define MAXDATASIZE 4096
 #define MAX_CLIENTS 15
 
 
 int sfd, portNumber;
-int fd[2];
 
 int cCount = 0;
-int idCount = 1;
 struct sockaddr_in s_addr;
 
 
 pthread_t threadPool[MAX_CLIENTS];
-pthread_mutex_t myMutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t myMutexPublicChat = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t myMutexPrivateChat = PTHREAD_MUTEX_INITIALIZER;
+
 vector<MessageCommunication> publicChat;
 
 void * retvals[MAX_CLIENTS];
+
 
 
 struct User{
@@ -53,125 +45,224 @@ struct User{
     int socket;
 };
 
+vector<User> users;
 
-map<string, User> users;
-
-void HandleOptions(ClientPetition pet, User *userInfo)
+void HandleOptions(ClientPetition pet, int sock)
 {
     cout << "LA petit op: " << pet.option() << endl;
+    
+    //Usuarios conectados
+    if (pet.option() == 2)
+    {
+        ConnectedUsersResponse *connectedU(new ConnectedUsersResponse);
+        for (struct User& user: users){
+            UserInfo* uInfo = connectedU->add_connectedusers();
+            uInfo->set_username(user.userName);
+            uInfo->set_status(user.status);
+            uInfo->set_ip(user.ip);
+
+        }
+        
+        ServerResponse response;
+        response.set_option(2);
+        response.set_code(200);
+        response.set_allocated_connectedusers(connectedU);
+        
+        string serString;
+        response.SerializeToString(&serString);
+
+        char cstr[serString.size() + 1];
+        strcpy(cstr, serString.c_str());
+        int sent = send(sock, cstr, strlen(cstr), 0);
+        if (sent == 0)
+        {
+            fprintf(stderr, "No se envio la lista\n");
+        }
+    }
+    // Cambio de estado
+    if (pet.option() == 3)
+    {
+        ChangeStatus *changeS(new ChangeStatus);
+        for (User& user: users) {
+            if (user.userName.compare(pet.change().username()) ==  0)
+            {
+                user.status = pet.change().status();
+                changeS->set_username(pet.change().username());
+                changeS->set_status(pet.change().status());
+            }
+
+        }
+
+        ServerResponse response;
+        response.set_option(3);
+        response.set_code(200);
+        response.set_allocated_change(changeS);
+
+        string serString;
+        response.SerializeToString(&serString);
+
+        char cstr[serString.size() + 1];
+        strcpy(cstr, serString.c_str());
+        int sent = send(sock, cstr, strlen(cstr), 0);
+        if (sent == 0)
+        {
+            fprintf(stderr, "No se hizo el cambion");
+        }        
+    }
+    // Chat
     if (pet.option() == 4)
     {
-        // MessageCommunication* broadMessage(new MessageCommunication);
-        // broadMessage->set_message(clip.messagecommunication().sender());
-
         //Chat publico
         if (pet.messagecommunication().recipient() == "everyone")
         {
             cout << "Chat publico" << endl;
-            ServerResponse resp;
-            resp.set_option(4);
-            resp.set_code(300);
 
-            string serializedString;
+            pthread_mutex_lock(&myMutexPublicChat);
+            //publicChat.push_back(pet.messagecommunication());
 
-            resp.SerializeToString(&serializedString);
+            MessageCommunication *msg(new MessageCommunication);
+            msg->set_sender(pet.messagecommunication().sender());
+            msg->set_message(pet.messagecommunication().message());
+            msg->set_recipient(pet.messagecommunication().recipient());
 
-            char cstr[serializedString.size() + 1];
-            strcpy(cstr, serializedString.c_str());
+            ServerResponse response;
+            response.set_option(4);
+            response.set_code(200);
+            response.set_allocated_messagecommunication(msg);
 
-            send(userInfo->socket, cstr, strlen(cstr), 0);
+            string serString;
+            response.SerializeToString(&serString);
 
-            // pthread_mutex_lock(&myMutex);
-            // publicChat.push_back(clip.messagecommunication());
-            // pthread_mutex_unlock(&myMutex);
-            // for (MessageCommunication message: publicChat)
-            // {
-            //     cout << "entro" << endl;
-            //     MessageCommunication *msg(new MessageCommunication);
-            //     msg->set_sender(message.sender());
-            //     msg->set_message(message.message());
+            char cstr[serString.size() + 1];
+            strcpy(cstr, serString.c_str());
 
-            //     ServerResponse response;
-            //     response.set_option(4);
-            //     response.set_code(200);
-            //     response.set_allocated_messagecommunication(msg);
+            for (User& user: users) {
+                int sent = send(user.socket, cstr, strlen(cstr), 0);
+                if (sent == -1)
+                {
+                    fprintf(stderr, "No se envio el mensaje\n");
+                    users.erase(std::remove_if(users.begin(),users.end(), [&](User const & user_) {
+                    	return user_.userName == user.userName;
+                    }), users.end());
+                    close(user.socket);
+                    cout << "mate usuario " << user.userName << endl;
+                }
+            }
+            
+            cout << "Chat enviado" << endl;
 
-            //     string serString;
-            //     response.SerializeToString(&serString);
+            pthread_mutex_unlock(&myMutexPublicChat);
 
-            //     char cstr[serString.size() + 1];
-            //     strcpy(cstr, serString.c_str());
-            //     int sent = send(userInfo->socket, cstr, strlen(cstr), 0);
-            //     if (sent == 0)
-            //     {
-            //         fprintf(stderr, "No se envio el mensaje\n");
-            //     }
-            //     cout << "entro2" << endl;
+        } else {
+            bool founded = false;
 
-            // }
+            cout << "Chat privado" << endl;
+            
+            pthread_mutex_lock(&myMutexPrivateChat);
+
+            MessageCommunication *msg(new MessageCommunication);
+            msg->set_sender(pet.messagecommunication().sender());
+            msg->set_message(pet.messagecommunication().message());
+            msg->set_recipient(pet.messagecommunication().recipient());
+
+            ServerResponse response;
+            response.set_option(4);
+            response.set_code(200);
+            response.set_allocated_messagecommunication(msg);
+
+            string serString;
+            response.SerializeToString(&serString);
+            char cstr[serString.size() + 1];
+            strcpy(cstr, serString.c_str());
+
+            for (User& user: users) {
+                if (user.userName.compare(pet.messagecommunication().recipient()) ==  0)
+                {
+                    int sentdest = send(user.socket, cstr, strlen(cstr), 0);
+                    if (sentdest == 0)
+                    {
+                        fprintf(stderr, "No se envio el mensaje\n");
+                    }
+
+                    founded = true;                    
+                    break;                    
+                }             
+            }
+            
+            if (!founded)
+            {
+                cout << "No se encontró al usuario" << endl;
+            }
             
 
+            pthread_mutex_unlock(&myMutexPrivateChat);
         }
-        //Chat privado
-        // else
-        // {
-        //     if (users.count(clip.messagecommunication().recipient()) > 0)
-        //     {
-        //         cout << "Ese usuario no esta conectado" << endl;
-        //     }
-        //     cout << "Chat con" << clip.messagecommunication().recipient() << endl;
-        //     broadMessage->set_recipient(clip.messagecommunication().recipient());
-                
-        //     ServerResponse response;
-        //     response.set_option(1);
-        //     response.set_allocated_messagecommunication(broadMessage);
+    }
+    //Informacion de usuario especifico
+    if (pet.option() == 5)
+    {
+        UserInfo *uInfo(new UserInfo);
 
-        //     string binary;
-        //     response.SerializeToString(&binary);
+        for (struct User& user: users){
+            if (user.userName.compare(pet.users().user()) ==  0)
+            {
+                uInfo->set_username(user.userName);
+                uInfo->set_status(user.status);
+                uInfo->set_ip(user.ip);
+                cout << "Socket del encontrado" << user.socket << endl;
+            }
 
-        //     char cstr[binary.size() + 1];
-        //     strcpy(cstr, binary.c_str());
-        //     int sent = send(userInfo->socket, cstr, strlen(cstr), 0);
-        //     if (sent == 0)
-        //     {
-        //         fprintf(stderr, "No se envio el mensaje\n");
-        //     }
-        // }
-    
+        }
+        
+        ServerResponse response;
+        response.set_option(5);
+        response.set_code(200);
+        response.set_allocated_userinforesponse(uInfo);
 
+        string serString;
+        response.SerializeToString(&serString);
+
+        cout << "Socket del que busca" << sock << endl;
+
+
+        char cstr[serString.size() + 1];
+        strcpy(cstr, serString.c_str());
+        int sent = send(sock, cstr, strlen(cstr), 0);
+        if (sent == 0)
+        {
+            fprintf(stderr, "No se envio la informacion\n");
+        }
     }
 }
 
 void * cThreadFunc(void *args) {
     char buffer[MAXDATASIZE];
-    User *threadInfo;
+    struct User *threadInfo;
     threadInfo = (struct User *) args;
 
+    int usoc = threadInfo->socket;
+    string uName = threadInfo->userName;
 
     bool isClosed = false;
     time_t serverTime;
     int count = 0;
     
 
-    while (threadInfo->socket > 0 && !isClosed)
+    while (usoc > 0 && !isClosed)
     {
         bzero(buffer, MAXDATASIZE);
 
         time(&serverTime);
 
-        // int resp = recv(threadInfo->socket, buffer, MAXDATASIZE, 0);
-
         char buff[MAXDATASIZE];
 
-        int bytesrecieved = recv(threadInfo->socket, buff, MAXDATASIZE, 0);
+        int bytesrecieved = recv(usoc, buff, MAXDATASIZE, 0);
         buff[bytesrecieved] = '\0';
 
         string serializedString = buff;
 
         ClientPetition cpetit;
         cpetit.ParseFromString(serializedString);
-        
-        cout << "Opción" << cpetit.option() << endl;
 
         if (bytesrecieved > 0)
         {
@@ -183,7 +274,7 @@ void * cThreadFunc(void *args) {
             }
             else
             {                
-                HandleOptions(cpetit, threadInfo);
+                HandleOptions(cpetit, usoc);
             }
         }
         else
@@ -203,7 +294,7 @@ void * cThreadFunc(void *args) {
     }
 
 
-    close(threadInfo->socket)  ;
+    close(usoc)  ;
     
 
     cCount--;
@@ -260,11 +351,11 @@ void listenNewConnections()
         int nsock = accept(sfd, (struct sockaddr *)&cAddr, &clientLength);
         if (nsock < 0)
         {
-            cout << "No se conecto con cliente" << endl;
+            cout << "Conexión abortada" << endl;
         }
         else
         {
-            cout << "Se conecto el cliente!" << endl;
+            cout << "Conexión salvaje aparece" << endl;
         }
 
         char buff[MAXDATASIZE];
@@ -277,35 +368,63 @@ void listenNewConnections()
         ClientPetition cpetit;
         cpetit.ParseFromString(serializedString);
         
-        cout << "Opción" << cpetit.option() << endl;
+        cout << "Opción " << cpetit.option() << endl;
+        ServerResponse response;
+        response.set_option(1);
 
         if (cpetit.option() == 1) {
-            struct User userInfo;
-            userInfo.userName = cpetit.registration().username();
-            userInfo.status = "ACTIVO";
-            userInfo.ip = cpetit.registration().ip();
-            userInfo.socket = nsock;
+            bool canBeRegistered = true;
 
-            ServerResponse response;
-            response.set_option(4);
-            response.set_code(200);
+            for (auto user = users.begin(); user != users.end(); user++)
+            {
+                
+                if (user->userName == cpetit.registration().username())
+                {
+                    cout << "Usuario duplicado" << endl;
+                    canBeRegistered = false;
+                    break;
+                }
+                
+            }
 
-            response.SerializeToString(&serializedString);
+            if (canBeRegistered) {
+                struct User user;
+                user.userName = cpetit.registration().username();
+                user.ip = cpetit.registration().ip();   
+                user.status = "ACTIVO";
+                user.socket = nsock;
 
-            char cstr[serializedString.size() + 1];
-            strcpy(cstr, serializedString.c_str());
+                cout << "Usuario: " << user.userName << " Socket: " << user.socket << endl;
 
-            send(nsock, cstr, strlen(cstr), 0);
+                response.set_code(200);
+                response.set_servermessage("Registro existoso");
 
-            //users.insert(pair<string,User>(userInfo.username, newuser));
 
-            pthread_create(&threadPool[cCount], NULL, cThreadFunc, (void *)&userInfo);
-            
-            cCount++;
-        } else {
-            cout << "Error de petición de registro" << endl;
-        }
+                users.push_back(user);
 
+                pthread_create(&threadPool[cCount], NULL, cThreadFunc, (void *)&user);
+                
+                cCount++;
+
+            } else {
+                response.set_code(500);
+                response.set_servermessage("Registro fallido");
+            }
+
+        } 
+        
+        // else {
+        //     cout << "Error de petición de registro" << endl;
+        //     response.set_code(500);
+        //     response.set_servermessage("Opción invalida");
+        // }
+
+        response.SerializeToString(&serializedString);
+
+        char resp[serializedString.size() + 1];
+        strcpy(resp, serializedString.c_str());
+
+        send(nsock, resp, strlen(resp), 0);            
     }
 }
 
@@ -329,218 +448,3 @@ int main(int argc, char *argv[]){
 }
 
 
-// int mainother(int argc, char *argv[])
-// {
-//     int portno, n;
-//     struct sockaddr_in serv_addr;
-//     struct hostent *server;
-//     bool salir = false;
-//     char buffer[BUFSIZE];
-
-//     GOOGLE_PROTOBUF_VERIFY_VERSION;
-
-//     if (argc < 2) {
-//        fprintf(stderr,"Not enough arguments given\n", argv[0]);
-//        exit(0);
-//     }
-    
-//     cout << "Works" << endl;
-    
-//     int res = pipe(fd);
-//     if (res < 0) {
-//         cout << "Error al crear el canal de comunicación" << endl;
-//         exit(1);
-//     }
-
-//     pthread_t tidod, tidm;
-
-//     portno = atoi(argv[1]);
-//     sockfd = socket(AF_INET, SOCK_STREAM, 0);
-
-//     if (sockfd < 0) 
-//         err("Socket error");
-
-    
-//     cout << "Works2" << endl;
-//     server = gethostbyname(argv[2]);
-
-//     cout << "Works3" << endl;
-//     if (server == NULL) {
-//         fprintf(stderr,"Host name error\n");
-//         exit(0);
-//     }
-
-//     bzero((char *) &serv_addr, sizeof(serv_addr));
-//     serv_addr.sin_family = AF_INET;
-
-//     bcopy((char *)server -> h_addr, (char *)&serv_addr.sin_addr.s_addr, server->h_length);
-//     serv_addr.sin_port = htons(portno);
-//     cout << "Works4" << endl;
-
-//     if (connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) 
-//         err("Connection error");
-        
-    
-//     struct User currentClient;
-//     cout << "Works5" << endl;
-    
-    
-//     while (true)
-//     {
-//         /* code */
-//         ClientPetition clip;
-//         recv(sockfd, buffer, BUFSIZE, 0);
-//         clip.ParseFromString(buffer);
-//         int option = clip.option();
-        
-//         Registrar Cliente
-//         if (option == 1)
-//         {
-//             if (users.count(clip.registration().username()) > 0)
-//             {
-//                 cout << "Ese usuario ya esta registrado" << endl;
-//             }
-            
-//             Guardar
-//             currentClient.username = clip.registration().username();
-//             currentClient.ip = clip.registration().ip();
-//             currentClient.status = "Activo";
-
-//             struct User newuser;
-//             newuser.username = currentClient.username;
-//             newuser.ip = currentClient.ip;
-
-//             users.insert(pair<string,User>(currentClient.username, newuser));
-
-//             Enviar mensaje de confirmacion
-//             ServerResponse response;
-//             response.set_option(1);
-//             response.set_code(200);
-//             response.set_servermessage("Registrado con éxito");
-
-//             string binary;
-//             response.SerializeToString(&binary);
-
-//             char cstr[binary.size() + 1];
-//             strcpy(cstr, binary.c_str());
-//             int sent = send(sockfd, cstr, strlen(cstr), 0);
-//             if (sent == 0)
-//             {
-//                 fprintf(stderr, "No se pudo notificar \n");
-//             }
-//         }
-
-
-//         Lista de clientes conectados
-
-//         else if (option == 2){
-//             string connectedUsers = "";
-//             cout << "Lista de usuarios conectados: \n" << endl;
-//             for (auto i = users.begin(); i != users.end(); ++i)
-//             {
-//                 connectedUsers += advance(firstUser, i);
-//                 string itrUsername = i->first;
-//                 Obtener el usuario del diccionario
-//                 struct User u = i->second;
-
-//                 cout << "\tUSER: " << itrUsername << "\tSTATUS: " << u.status << "\tIP: " << u.ip << endl;
-//             }
-
-//             ConnectedUsersResponse * userList(new ConnectedUsersResponse);
-
-//             userList->set_allocated_connectedusers(connectedUsers);
-
-//             ServerResponse sResponse;
-//             sResponse.set_option(3);
-//             sResponse.set_allocated_connectedusers(userList);
-
-            
-//         }
-        
-
-//         Cambio de estado
-//         else if (option == 3){
-
-
-//         }
-
-//         Mensajes
-//         else if (option == 4){
-//             MessageCommunication* broadMessage(new MessageCommunication);
-//             broadMessage->set_message(clip.messagecommunication().sender());
-
-//             Chat publico
-//             if (clip.messagecommunication().recipient() == "everyone")
-//             {
-//                 cout << "Chat publico" << endl;
-//                 for(auto i = users.begin(); i != users.end(); ++i)
-//                 {
-//                     if (i->first != currentClient.username)
-//                     {
-//                         broadMessage->set_recipient(clip.messagecommunication().recipient());
-                        
-//                         ServerResponse response;
-//                         response.set_option(1);
-//                         response.set_allocated_messagecommunication(broadMessage);
-
-//                         string binary;
-//                         response.SerializeToString(&binary);
-
-//                         char cstr[binary.size() + 1];
-//                         strcpy(cstr, binary.c_str());
-//                         int sent = send(sockfd, cstr, strlen(cstr), 0);
-//                         if (sent == 0)
-//                         {
-//                             fprintf(stderr, "No se envio el mensaje\n");
-//                         }
-
-//                     }
-//                 }
-
-//             }
-//             Chat privado
-//             else
-//             {
-//                 if (users.count(clip.messagecommunication().recipient()) > 0)
-//                 {
-//                     cout << "Ese usuario no esta conectado" << endl;
-//                 }
-//                 cout << "Chat con" << clip.messagecommunication().recipient() << endl;
-//                 broadMessage->set_recipient(clip.messagecommunication().recipient());
-                        
-//                 ServerResponse response;
-//                 response.set_option(1);
-//                 response.set_allocated_messagecommunication(broadMessage);
-
-//                 string binary;
-//                 response.SerializeToString(&binary);
-
-//                 char cstr[binary.size() + 1];
-//                 strcpy(cstr, binary.c_str());
-//                 int sent = send(sockfd, cstr, strlen(cstr), 0);
-//                 if (sent == 0)
-//                 {
-//                     fprintf(stderr, "No se envio el mensaje\n");
-//                 }
-//             }
-            
-
-//         }
-
-//         Informacion de usuario especifico
-//         else if (option == 5){
-        
-//             if (users.count(clip.users().user()) == 0)
-//             {
-//                 cout << "Ese usuario no esta conecctado" << endl;
-//             }
-//             else
-//             {
-//                 auto u = users.find(clip.users().user());
-//                 cout << "User: " << u->first << "IP: " << u->second.ip << endl;
-//             }
-
-//         }   
-//     }
-
-// }
