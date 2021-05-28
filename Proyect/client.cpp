@@ -180,9 +180,6 @@ void helpmen(int op){
 
 int main(int argc, char* argv[]) 
 {
-    // Variables temporales. En producción se borraran las variables
-    string tempconnectedusers[2] = {"Lucia", "Ernesto"};
-
     // Constantes
     string menu = "Menu de opciones:\n  1. Chat general\n  2. Mensaje privado\n  3. Cambio de status\n  4. Usuarios conectados\n  5. Información de un usuario\n  6. Ayuda\n  7. Salir\n";
     string helpmenu = "Menu de ayuda:\n  1. Enviar el mensaje al chat general\n  2. Enviar un mensaje privado\n  3. Cambio de status\n  4. Usuarios conectados\n  5. Información de usuario\nIngrese la opción a la que requiere ayuda: ";
@@ -272,9 +269,6 @@ int main(int argc, char* argv[])
 
     // Objeto Client con el cual se enviarán las peticiones
     chat::ClientPetition client_petition;
-
-    // Objeto de userRequest para solicitar 
-    chat::UserRequest* userRequest(new chat::UserRequest);
 
 
     // String el cual se enviará entre cliente - servidor
@@ -411,6 +405,7 @@ int main(int argc, char* argv[])
 
         } else if (op == 4)
         {
+            chat::UserRequest* userRequest(new chat::UserRequest);
             // Realizamos el pedido de la información de 
             userRequest->set_user("everyone");
             client_petition.set_option(2);
@@ -425,11 +420,6 @@ int main(int argc, char* argv[])
             // TO DO: Enviar la petición y esperar la respuesta del servidor y pasarlo a un arreglo
             pthread_cond_wait(&cond1, &locki);
 
-            string connectedUsers[sizeof(tempconnectedusers) / sizeof(tempconnectedusers[0])];
-            copy(begin(tempconnectedusers), end(tempconnectedusers), begin(connectedUsers));
-            cout << "Lista de usuarios connectados" << endl;
-            int counter = 1;
-            for(string connectedUser: connectedUsers) cout << "   " << counter++ << ". " << connectedUser << endl;
         } else if (op == 5)
         {
             cout << "Ingrese el nombre del usuario del que desea saber su información (Enter si solo deseas pasar de largo):\n>";

@@ -279,6 +279,18 @@ void * cThreadFunc(void *args) {
         else
         {
             cout << "Error al recibir" << endl;
+            for (User& user: users) {
+            if (uName.compare(user.userName) ==  0)
+            {
+                users.erase(std::remove_if(users.begin(),users.end(), [&](User const & user_) {
+                    	return user_.userName == user.userName;
+                    }), users.end());
+                close(usoc);
+                cout << "mate usuario " << uName << endl;
+            }
+            break;
+        }
+            
         }
 
         
